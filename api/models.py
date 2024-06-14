@@ -50,6 +50,22 @@ class UserModel(AbstractBaseUser, PermissionsMixin):
     def is_staff(self):
         return self.is_admin
 
+    # Adding related_name attributes to avoid clashes
+    groups = models.ManyToManyField(
+        'auth.Group',
+        related_name='user_model_set',
+        blank=True,
+        help_text='The groups this user belongs to.',
+        verbose_name='groups'
+    )
+    user_permissions = models.ManyToManyField(
+        'auth.Permission',
+        related_name='user_model_set',
+        blank=True,
+        help_text='Specific permissions for this user.',
+        verbose_name='user permissions'
+    )
+
 # Address model
 class Address(models.Model):
     user = models.ForeignKey(UserModel, on_delete=models.CASCADE)
@@ -72,7 +88,7 @@ class Brand(models.Model):
 class Vehicle(models.Model):
     name = models.CharField(max_length=100)
     image = models.ImageField(upload_to='vehicle_images/')
-    brand = models.ForeignKey(Brand, on_delete=models.CASCADE, related_name='vehicle_brand')
+    brand = models.ForeignKey(Brand, on_delete=models.CASCADE, related_name='vehicle_brand')  
 
     def __str__(self):
         return self.name
@@ -95,12 +111,12 @@ class Product(models.Model):
     title = models.CharField(max_length=200)
     image = models.ImageField(upload_to='product_images/')
     price = models.DecimalField(max_digits=10, decimal_places=2)
-    vehicle = models.ManyToManyField(Vehicle, related_name='product_vehicle')
-    brand = models.ForeignKey(Brand, on_delete=models.CASCADE, related_name='product_brand')
+    vehicle = models.ManyToManyField(Vehicle, related_name='products')
+    brand = models.ForeignKey(Brand, on_delete=models.CASCADE, related_name='products')
     highlights = models.TextField()
     description = models.TextField()
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='product_category')
-    model_year = models.ForeignKey(ModelYear, on_delete=models.CASCADE, related_name='product_year')
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='products')
+    model_year = models.ManyToManyField(ModelYear, related_name='products',blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -108,7 +124,7 @@ class Product(models.Model):
 
 class Review(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='reviews')
-    user = models.ForeignKey(UserModel, on_delete=models.CASCADE, related_name='review_user')
+    user = models.ForeignKey(UserModel, on_delete=models.CASCADE, related_name='reviews')
     rating = models.IntegerField(choices=[(i, str(i)) for i in range(1, 6)])
     comment = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
@@ -117,7 +133,6 @@ class Review(models.Model):
         return self.comment
 
 # Cart Model
-
 class Cart(models.Model):
     user = models.OneToOneField(UserModel, on_delete=models.CASCADE, related_name='cart')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -132,10 +147,9 @@ class CartItem(models.Model):
     quantity = models.IntegerField(default=1)
 
     def __str__(self):
-        return self.cart.user.name
+        return f'{self.product.title} ({self.quantity})'
 
 # Order Model
-
 class Order(models.Model):
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE)
     address = models.ForeignKey(Address, on_delete=models.CASCADE)
@@ -148,13 +162,12 @@ class Order(models.Model):
     def __str__(self):
         return self.order_id
 
-# Payment Model 
-
+# Payment Model
 class Payment(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE)
     payment_method = models.CharField(max_length=255, choices=(
         ('UPI Payment', 'UPI Payment'),
-        ('Card', 'Credit/Debit Cards')
+        ('Card', 'Credit/Debit Cards'),
         ('COD','Cash On Delivery'),
     ))
     payment_status = models.CharField(max_length=20, choices=[
