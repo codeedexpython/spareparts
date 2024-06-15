@@ -39,16 +39,10 @@ class UserLoginSerializer(serializers.Serializer):
     password = serializers.CharField(max_length=100)
 
     def validate(self, data):
-        email = data.get('email', None)
-        phone_number = data.get('phone_number', None)
-        password = data.get('password', None)
-
+        email = data.get('email')
+        phone_number = data.get('phone_number')
         if not email and not phone_number:
-            raise serializers.ValidationError('An email or phone number is required to log in.')
-
-        if not password:
-            raise serializers.ValidationError('A password is required to log in.')
-
+            raise serializers.ValidationError("Either email or phone number is required")
         return data
 
 class UserDetailSerializer(serializers.ModelSerializer):
@@ -59,6 +53,7 @@ class ChangePasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()
     new_password = serializers.CharField(write_only=True)
     confirm_password = serializers.CharField(write_only=True)
+    otp = serializers.CharField(write_only=True)
 
     def validate(self, data):
         if data['new_password'] != data['confirm_password']:
@@ -74,6 +69,7 @@ class ChangePasswordSerializer(serializers.Serializer):
         if user.otp != otp:
             raise serializers.ValidationError("Invalid OTP.")
 
+        # Hash the new password before saving
         user.password = new_password
         user.save()
         return user
@@ -85,3 +81,50 @@ class AddressSerializer(serializers.ModelSerializer):
     class Meta:
         model = Address
         fields = '__all__'
+class VehicleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Vehicle
+        fields = ['vehicle_id', 'name', 'image']
+class BrandSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Brand
+        fields = ['brand_id', 'name', 'image']
+
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = ['category_id', 'name', 'image']
+class ModelYearSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ModelYear
+        fields = ['modelyear_id', 'year']
+
+class ProductSerializer(serializers.ModelSerializer):
+    vehicle = VehicleSerializer(source='vehicle_id', read_only=True)  # Use source to point to vehicle_id ForeignKey
+    brand = BrandSerializer(source='brand_id', read_only=True)
+    category = CategorySerializer(source='category_id', read_only=True)
+    modelyear = ModelYearSerializer(source='modelyear_id', read_only=True)
+
+    class Meta:
+        model = Product
+        fields = ['product_id', 'title', 'image', 'price', 'vehicle', 'brand', 'highlights', 'description', 'category', 'modelyear', 'created_at']
+
+class CartSerializer(serializers.ModelSerializer):
+    product = ProductSerializer()
+
+    class Meta:
+        model = Cart
+        fields = ['cart_id', 'product', 'quantity']
+
+class OrderSerializer(serializers.ModelSerializer):
+    cart = CartSerializer(source='cart_id', many=False)
+    address = AddressSerializer(source='address_id', many=False)
+
+    class Meta:
+        model = Order
+        fields = ['order_id', 'cart', 'address', 'user_id', 'total_amount', 'delivery_charges', 'coupon_discount', 'created_at']
+
+class CreateOrderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Order
+        fields = ['cart_id', 'address_id', 'user_id', 'total_amount', 'delivery_charges', 'coupon_discount']

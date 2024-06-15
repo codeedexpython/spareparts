@@ -24,7 +24,7 @@ class UserRegistrationView(APIView):
                 fail_silently=False,
             )
 
-            return Response({"message": "User registered successfully. OTP sent to email."},
+            return Response({"message": "OTP sent to email."},
                             status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -42,9 +42,15 @@ class UserLoginView(APIView):
                     user = User.objects.get(email=email)
                 elif phone_number:
                     user = User.objects.get(phone_number=phone_number)
+                else:
+                    return Response({'error': 'Email or phone number required'}, status=status.HTTP_400_BAD_REQUEST)
 
-                if not check_password(password, user.password):
+
+                if user.password != password:
                     return Response({'error': 'Invalid credentials'}, status=status.HTTP_400_BAD_REQUEST)
+
+                # Set user_id in session
+                request.session['user_id'] = user.user_id
 
                 return Response({'message': 'Login successful'}, status=status.HTTP_200_OK)
 
@@ -54,32 +60,44 @@ class UserLoginView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 class ChangePasswordView(APIView):
     def post(self, request):
-        serializer = ChangePasswordSerializer(data=request.data)
-        if serializer.is_valid():
-            user = User.objects.get(email=request.data['email'])
-            otp = str(random.randint(100000, 999999))
-            user.otp = otp
-            user.otp_created_at = datetime.datetime.now()
-            user.save()
+        email = request.data.get('email')
+        if email:
+            try:
+                user = User.objects.get(email=email)
+                otp = str(random.randint(100000, 999999))
+                user.otp = otp
+                user.otp_created_at = datetime.datetime.now()
+                user.save()
 
-            # Send OTP email
-            send_mail(
-                'Your OTP Code for Password Change',
-                f'Your OTP code is {otp}',
-                settings.DEFAULT_FROM_EMAIL,
-                [user.email],
-                fail_silently=False,
-            )
+                # Send OTP email
+                send_mail(
+                    'Your OTP Code for Password Change',
+                    f'Your OTP code is {otp}',
+                    settings.DEFAULT_FROM_EMAIL,
+                    [user.email],
+                    fail_silently=False,
+                )
 
-            return Response({"message": "OTP sent to email."}, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"message": "OTP sent to email."}, status=status.HTTP_200_OK)
+            except User.DoesNotExist:
+                return Response({"error": "User with this email does not exist."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
 
     def put(self, request):
         serializer = ChangePasswordSerializer(data=request.data)
         if serializer.is_valid():
-            user = serializer.save()
-            return Response({"message": "Password changed successfully."}, status=status.HTTP_200_OK)
+            try:
+                user = serializer.save()
+                return Response({"message": "Password changed successfully."}, status=status.HTTP_200_OK)
+            except serializers.ValidationError as e:
+                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class UserLogoutView(APIView):
+    def post(self, request):
+        # Clear the session data
+        request.session.flush()
+        return Response({'message': 'Logout successful'}, status=status.HTTP_200_OK)
 @api_view(['GET'])
 def list_users(request):
     users = User.objects.all()
@@ -108,11 +126,14 @@ def user_detail_delete(request, user_id):
     if request.method == 'DELETE':
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+####################################################address##################################################
 @api_view(['GET'])
 def list_addresses(request):
     addresses = Address.objects.all()
     serializer = AddressSerializer(addresses, many=True)
     return Response(serializer.data)
+
 @api_view(['POST'])
 def create_address(request):
     if request.method == 'POST':
@@ -151,5 +172,68 @@ def delete_address(request, address_id):
     if request.method == 'DELETE':
         address.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+#################################################filter section####################################################
 
+@api_view(['GET'])
+def products_by_vehicle(request, vehicle_id):
+    try:
+        products = Product.objects.filter(vehicle_id=vehicle_id)
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
+    except Product.DoesNotExist:
+        return Response({"message": "Products not found for this vehicle"}, status=status.HTTP_404_NOT_FOUND)
 
+@api_view(['GET'])
+def products_by_brand(request, brand_id):
+    try:
+        products = Product.objects.filter(brand_id=brand_id)
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
+    except Product.DoesNotExist:
+        return Response({"message": "Products not found for this brand"}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+def products_by_category(request, category_id):
+    try:
+        products = Product.objects.filter(category_id=category_id)
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
+    except Product.DoesNotExist:
+        return Response({"message": "Products not found for this category"}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+def products_by_modelyear(request, modelyear_id):
+    try:
+        products = Product.objects.filter(modelyear_id=modelyear_id)
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
+    except Product.DoesNotExist:
+        return Response({"message": "Products not found for this model_year"}, status=status.HTTP_404_NOT_FOUND)
+
+####################################order#####################################################
+@api_view(['GET'])
+def get_user_orders(request, user_id):
+    try:
+        user = User.objects.get(user_id=user_id)
+    except User.DoesNotExist:
+        return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    orders = Order.objects.filter(user_id=user)
+    if not orders.exists():
+        return Response({'message': 'No orders found for this user'}, status=status.HTTP_200_OK)
+
+    serializer = OrderSerializer(orders, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+@api_view(['POST'])
+def create_order(request):
+    serializer = CreateOrderSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['DELETE'])
+def delete_order(request, order_id):
+    order = Order.objects.get(order_id=order_id)
+    order.delete()
+    return Response({'message': 'Order deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
