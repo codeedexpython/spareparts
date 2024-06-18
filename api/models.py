@@ -1,74 +1,33 @@
 from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-from django.core.validators import RegexValidator
+from django.contrib.auth.hashers import check_password,make_password
 
 # Custom user manager
-class UserManager(BaseUserManager):
-    def create_user(self, mobile_number, name, password=None):
-        if not mobile_number:
-            raise ValueError('Users must have a mobile number')
-        if not name:
-            raise ValueError('Users must have a name')
 
-        user = self.model(mobile_number=mobile_number, name=name)
-        user.set_password(password)
-        user.save(using=self._db)
-        return user
-
-    def create_superuser(self, mobile_number, name, password=None):
-        user = self.create_user(mobile_number, name, password)
-        user.is_admin = True
-        user.is_superuser = True
-        user.save(using=self._db)
-        return user
-
-# Custom user model
-class UserModel(AbstractBaseUser, PermissionsMixin):
-    name = models.CharField(max_length=100)
-    mobile_number = models.CharField(
-        max_length=10,
-        unique=True,
-        validators=[RegexValidator(regex="^\d{10}$", message="Mobile number must be 10 digits")]
-    )
+class User(models.Model):
+    user_id=models.AutoField(primary_key=True)
+    firstname = models.CharField(max_length=100)
+    lastname = models.CharField(max_length=12)
+    email = models.EmailField(max_length=100, unique=True)
+    phone_number=models.CharField(max_length=10)
     password = models.CharField(max_length=100)
     otp = models.CharField(max_length=6, blank=True, null=True)
-    otp_verified = models.BooleanField(default=False)
     otp_created_at = models.DateTimeField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    is_active = models.BooleanField(default=True)
-    is_admin = models.BooleanField(default=False)
 
-    objects = UserManager()
+    class Meta:
+        db_table = "users_table"
 
-    USERNAME_FIELD = 'mobile_number'
-    REQUIRED_FIELDS = ['name']
+    def set_password(self, raw_password):
+        self.password = make_password(raw_password)
+        self.save()
 
-    def __str__(self):
-        return self.name
-
-    @property
-    def is_staff(self):
-        return self.is_admin
-
-    # Adding related_name attributes to avoid clashes
-    groups = models.ManyToManyField(
-        'auth.Group',
-        related_name='user_model_set',
-        blank=True,
-        help_text='The groups this user belongs to.',
-        verbose_name='groups'
-    )
-    user_permissions = models.ManyToManyField(
-        'auth.Permission',
-        related_name='user_model_set',
-        blank=True,
-        help_text='Specific permissions for this user.',
-        verbose_name='user permissions'
-    )
+    def check_password(self, raw_password):
+        return check_password(raw_password, self.password)
+    class Meta:
+        db_table = "users_table"
 
 # Address model
 class Address(models.Model):
-    user = models.ForeignKey(UserModel, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=100)
     phone_number = models.CharField(max_length=10)
     address = models.TextField()
@@ -124,7 +83,7 @@ class Product(models.Model):
 
 class Review(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='reviews')
-    user = models.ForeignKey(UserModel, on_delete=models.CASCADE, related_name='reviews')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reviews')
     rating = models.IntegerField(choices=[(i, str(i)) for i in range(1, 6)])
     comment = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
@@ -134,7 +93,7 @@ class Review(models.Model):
 
 # Cart Model
 class Cart(models.Model):
-    user = models.OneToOneField(UserModel, on_delete=models.CASCADE, related_name='cart')
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='cart')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -160,7 +119,7 @@ class Order(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return self.order_id
+        return self.order_id 
 
 # Payment Model
 class Payment(models.Model):
